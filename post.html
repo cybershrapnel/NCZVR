@@ -1,0 +1,607 @@
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>dlux VR Starter Pack</title>
+    <meta name="description" content="Tag">
+
+    <script src="https://aframe.io/releases/0.8.2/aframe.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/1.4.5/socket.io.min.js"></script>
+    <script src="https://wss.dlux.io/easyrtc/easyrtc.js"></script>
+    <script src="https://unpkg.com/aframe-aabb-collider-component@^2.2.1/dist/aframe-aabb-collider-component.min.js"></script>
+    <script src="https://unpkg.com/aframe-event-set-component@4.0.1/dist/aframe-event-set-component.js"></script>
+    <script src="https://rawgit.com/feiss/aframe-environment-component/master/dist/aframe-environment-component.min.js"></script>
+    <script src="https://unpkg.com/aframe-randomizer-components@^3.0.1/dist/aframe-randomizer-components.min.js"></script>
+    <script src="https://unpkg.com/aframe-state-component@3.0.0/dist/aframe-state-component.min.js"></script>
+    <script src="https://unpkg.com/networked-aframe@^0.6.0/dist/networked-aframe.min.js"></script>
+    <script src="https://rawgit.com/donmccurdy/aframe-extras/master/dist/aframe-extras.js"></script>
+    <script src="https://rawgit.com/fernandojsg/aframe-teleport-controls/master/dist/aframe-teleport-controls.min.js"></script>
+    <script src="https://unpkg.com/aframe-look-at-component@0.5.1/dist/aframe-look-at-component.min.js"></script>
+    <script src="https://unpkg.com/aframe-super-keyboard@1.0.0/dist/aframe-super-keyboard.min.js"></script>
+    <script src="navmesh.js"></script>
+    <script>
+      /*
+      MIT License
+
+      Copyright (c) 2018 Steven Ettinger | @dlux-io
+
+      Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+      The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+      */
+      var postKey; //this page will be posted in IPFS and will need a way to display current state about itself. This key will be passed to declare its current state on Steem.
+      var permlink,author,iam = "Init"
+      function onSceneLoad(msg) {
+        var username = msg || iam;
+        var myNametag = document.querySelector('.nametag');
+        myNametag.setAttribute('text', 'value', username);
+        myNametag.setAttribute('visible', false);
+        //var myCursorEl = document.querySelector('#myCursor');
+        //myCursorEl.setAttribute('visible', true);
+        var nafi = document.querySelector('a-scene').components['networked-scene'] //connects networked aframe dynamically based on blockchain data
+        if (window.location.host.split( '.' )[1] == 'glitch') {
+        nafi.data.app = window.location.host.split( '.' )[0];
+        } else {
+        nafi.data.app = permlink[0];
+        }
+        nafi.data.room = permlink[1];
+        document.querySelector('a-scene').components['networked-scene'].connect();
+        
+        navpointerset()
+      }
+    // Target URL let things become links, if trying to navigate use sendLink('/@username') or similar domain level reference, outside navigation should be done with sendLink as well, but is discouraged
+    AFRAME.registerComponent('url', { 
+      schema: {default: ''},
+      init: function () {
+        var url = this.data;
+        this.el.addEventListener('click', function () {
+          if (url == '/@'){
+          if (iam != 'Guest'){
+          url = url + iam} else {url = url + 'dlux-io'}}
+        sendLink(url)
+        console.log(url)
+        });
+    }
+    });
+      // votepost="authorname/permlink" as aframe attribute
+      AFRAME.registerComponent('votepost', { //the vote button or field aframe.io/docs
+        schema: {default: ''},
+        init: function () {
+          var data = this.data //author/permlink/weight
+          var el = document.querySelector('post');
+          this.el.addEventListener('hitend', function(){
+            if (iam == 'Guest') {
+              sendLink('/');
+            } else {
+            aVote(data);
+            }
+          });
+        }
+      });
+AFRAME.registerComponent('show-menu', {
+      schema: {
+      show: {default: ''}
+      },
+      init: function() {
+        var el = this.el;
+        var showEl = el.querySelector('.hiddenMenu');
+        //mouseenter
+        el.addEventListener('mouseenter', function() {
+          showEl.setAttribute('visible', true);
+        });
+        //mouseleave
+        el.addEventListener('mouseleave', function() {
+          showEl.setAttribute('visible', false);
+        });
+      }
+    });
+    // Toggle Author that will likely be placed on a follower at the cameras look-down
+      function matchCam(){
+      return document.querySelector('#head').object3D.rotation._y;
+      }
+    AFRAME.registerComponent('toggle-info', {
+      schema: {default: ''},
+      init: function() {
+        var el = document.querySelector('#inContentMenu');
+        var menuEl = document.querySelector('#menuContainer');
+        var rotEl = document.querySelector('#rotator')
+        this.el.addEventListener('mouseenter', function() {
+          rotEl.object3D.rotation.set(0,matchCam(),0);
+        if (menuEl.getAttribute('visible', true) ) {
+            menuEl.setAttribute('visible', false);
+        } else {
+            menuEl.setAttribute('visible', true);
+            }
+        });
+      }
+    });
+    // Where to handle attributes based on capability
+AFRAME.registerComponent('vote', { //the vote button
+        schema: {default: ''},
+        init: function () {
+          this.el.addEventListener('click', function(){
+            if (iam == 'Guest') {
+              sendLink('/auth');
+              console.log('/auth')
+            } else {
+            voteButton();
+            console.log('voteButton()')
+            }
+          });
+        }
+      });
+      AFRAME.registerComponent('buy', { //generate and pass a hot signing link, leave URI blank to return to same dApp
+        schema: {default: ''},
+        init: function () {
+          var amount = this.data
+          var el = document.querySelector('buy');
+          this.el.addEventListener('click', function(){
+            if (iam == 'Guest') {
+              sendLink('/auth');
+            } else {
+            AFRAME.scenes[0].emit('sendSteem', {val: amount});
+            }
+          });
+        }
+      });
+      AFRAME.registerComponent('followa', { //the vote button
+        schema: {default: ''},
+        init: function () {
+          this.el.addEventListener('click', function(){
+            follow()
+          });
+        }
+      });
+      AFRAME.registerComponent('votee', { //the vote button or fieldaframe.io/docs
+        schema: {default: ''},
+        init: function () {
+          var el = document.querySelector('votee');
+          this.el.addEventListener('hitend', function(){
+            if (iam == 'Guest') {
+              sendLink('/auth');
+            } else {
+            voteButton();
+            }
+          });
+        }
+      });
+      AFRAME.registerComponent('exit', { //the field
+        schema: {default: ''},
+        init: function () {
+          var el = document.querySelector('#exit');
+      el.addEventListener('hitend', function(){
+      sendLink('/@'+ postKey.split('/')[0]);
+      });
+        }
+      });
+      //API for steem and dlux
+    var iam = "Init"
+    if (window.addEventListener) {
+    window.addEventListener("message", onMessage, false);
+    }
+    else if (window.attachEvent) {
+    window.attachEvent("onmessage", onMessage, false);
+    }
+    function onMessage(event) {
+    //if (event.origin !== "https://dlux.io" || "localhost:3000") return;
+    var data = event.data;
+    if (typeof(window[data.func]) == "function") {
+    window[data.func].call(null, data.message);
+    }
+    }
+    function voteMsg(message) {
+      AFRAME.scenes[0].emit('setVoteMsg', {val: message}); //transaction id in message, useful for triggering other actions.
+    }
+    function accountUpdate(message) {
+      console.log(message) //transaction id in message, useful for triggering other actions.
+    }
+    function voteButton(amt) { //
+      voteAmt = amt || 10000
+      AFRAME.scenes[0].emit('setVoteMsg', {val: 'Thank you for voting in VR'});
+    window.parent.postMessage({
+        'func': 'vote',
+        'message': voteAmt  //integer -10000(flag) to 10000(vote) on this post
+    }, "*");
+    }
+    function flagButton() {  //redundant and likely unused
+    var voteAmt = -1;
+    window.parent.postMessage({
+      'func': 'vote',
+      'message': voteAmt
+    }, "*");
+    }
+    function follow() {
+      window.parent.postMessage({
+        'func': 'follow',
+        'message': postKey.split('/')[0]
+    }, "*");
+      console.log('sent follow ' + postKey.split('/')[0])
+    }
+    /*
+    This function will prompt the user to post a comment to your dApp. This can be utilized to store everything from votable apps to references to 3d objects and media files. High scores, to reviews... this is the decentralized place to have users store and monetize information used by your dApps
+    */
+    function comment(message){
+    window.parent.postMessage({
+        'func': 'comment',
+        'message': {
+        'message': message.message,
+        'customJSON': message.customJSON
+    }
+    }, "*");
+      //returns a steemstate object that will likely retrigger the data initial data load for the dApp
+    }
+    function sendLink(payload) {
+    //  var link = document.querySelector('/@dlux-io').value //pass a string to escape the dlux.io iFrame. Domain level redirects are greatm external will recieve a warning.
+    window.parent.postMessage({
+    'func': 'sendLink',
+    'message': payload
+    }, "*");
+    }
+    function aVote(data) {   //utilize this API to trigger votes for other steem content. takes data string as "author/permLink/weight"
+      window.parent.postMessage({
+        'func': 'aVote',
+        'message': {
+          'permlink': data.split('/')[0], 
+         'author': data.split('/')[1],
+         'weight': 10000 || data.split('/')[2],
+    }
+    }, "*");
+    }
+    var hasMemoKey = false;
+    function memoKey (message) {
+      hasMemoKey = message;
+    }
+    function key (message) { //how this post finds itself on blockchain
+      postKey = message;
+      permlink = message.split('/');
+      onSceneLoad(iam);
+    }
+    function accountUpdate(message) {
+      console.log(message)
+    }
+    function steemState(message) {  //the entirety of the current steem state will be passed in JSON. Utilize this function to initialize current state. Vote and comment also will return a steemState(message)
+      AFRAME.scenes[0].emit('setID', {val: message.id});
+      AFRAME.scenes[0].emit('setTitle', {val: message.root_title});
+      AFRAME.scenes[0].emit('setAuthor', {val: message.author});
+      AFRAME.scenes[0].emit('setBody', {val: message.body});
+      AFRAME.scenes[0].emit('setVotesNum', {val: message.net_votes});
+      AFRAME.scenes[0].emit('setVotesVal', {val: Math.round( parseFloat(message.pending_payout_value.substring(0,5)) * 100) / 100});
+      console.log(message)
+    }
+    function iAm(message) { //This is the unsecure identifier that returns logged in steem user
+      AFRAME.scenes[0].emit('setiAm', {val: message});
+      iam = message;
+    }
+    function onpageloaded() { //requests steem state
+      window.parent.postMessage({
+      'func': 'iloaded',
+      'message': ''
+    }, "*");
+    }
+      //global aframe state, this and the NAF schemas should enable you to create any variety of program
+      AFRAME.registerState({
+        initialState: {
+          post: "",
+          username: "@",
+          id: "",
+          title: "No sync ...",
+          author: "...",
+          body: "I haven't loaded.",
+          rep: "UND",
+          profileimage: "",
+          votesNum: "UNK",
+          votesVal: "$0",
+          menuVis: false,
+          voteMsg: "Log in",
+          host: "NoSync",
+          imIt: false,
+          whosIt: "Welcome to dlux"
+        },
+        handlers: { //state handlers discribed in networked-aframe
+          setImIt: function (state, action) {
+            state.imIt != state.imIt;
+          },
+          setiAm: function (state, action) {
+            state.username = "Welcome @" + action.val;
+            if (action.val = 'Guest') {
+            state.voteMsg = "Log in";
+            } else {
+            state.voteMsg = "Vote"
+            }
+          },
+          setVoteMsg: function (state, action) {
+            state.voteMsg = action.val;
+          },
+          setID: function (state, action) {
+            state.id = action.val;
+          },
+          setAuthor: function (state, action) {
+            state.author = "By @" + action.val;
+            state.host = action.val;
+          },
+          setBody: function (state, action) {
+            state.body = removeMD(action.val).trim();
+          },
+          setHost: function (state, action) {
+            state.host = action.val;
+          },
+          setTitle: function (state, action) {
+            state.title = action.val;
+          },
+          setVotesNum: function (state, action) {
+            state.votesNum = action.val;
+          },
+          setVotesVal: function (state, action) {
+            state.votesVal = "$" + action.val;
+          },
+          setProfileImage: function (state, action) {
+            state.profileimage = action.val;
+          }, 
+          sendSteem: function (state, action) {
+          window.parent.postMessage({
+            'func': 'passGenerateHotLink',
+            'message': {to:state.host, amount: action.val, memo:'Purchased in VR on DLUX', uri:'', skipEncode: true,}
+            }, "*");}}});
+    </script>
+  </head>
+  <body>
+
+    <!-- Our webrtc server information info in networked aframe, audio chat on by default-->
+
+    <a-scene inspector="url: inspector.js"
+             inspector-plugin-recast
+             antialias="true"
+             networked-scene="
+             serverURL: wss://wss.dlux.io;
+             adapter: easyrtc;
+             audio: true;
+             debug: true;
+             connectOnLoad: false;">
+      <!-- place assets here -->
+      <a-assets>
+        <img id="nav-trending-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2FFire_Emoji.png" crossorigin="anonymous">
+        <img id="nav-new-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Forange-new-512.gif" crossorigin="anonymous">
+        <img id="nav-random-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Fwhitedice.png" crossorigin="anonymous">
+        <img id="nav-browse-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2F29506-200.png" crossorigin="anonymous">
+        <img id="nav-create-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Fdocument.png" crossorigin="anonymous">
+        <img id="nav-steem-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Fsteem-coin.png" crossorigin="anonymous">
+        <img id="nav-profile-icon" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Fmarkegiles.jpg" crossorigin="anonymous">
+        <img id="greeter-pic-photo" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Frobotolux.png" crossorigin="anonymous">
+        <img id="voteButtonPic" src="https://cdn.glitch.com/5ba0e9a1-e1be-470c-be6c-b6bd1b8e349e%2Fupvote.png" crossorigin="anonymous">
+         <!-- Templates -->
+        <!-- Player -->
+        <template id="player-template">
+          <a-entity nav-agent>
+          <a-entity class="nametag" look-at="#player" text="value: Hello World; align:center;" position="0 2.5 0" rotation="0 180 0" scale="8 8 8"></a-entity></a-entity>        </template>
+        <!-- Head -->
+        <template id="head-template">
+          <a-entity class="avatar" networked-audio-source>
+            <a-entity geometry="primitive: sphere" class="head"
+              color="#ffffff"
+             scale="0.45 0.5 0.4"
+            ></a-entity>
+            <a-entity class="face"
+              position="0 0.05 0"
+            >
+              <a-entity geometry="primitive: sphere" class="eye"
+                color="#efefef"
+                position="0.16 0.1 -0.35"
+                scale="0.12 0.12 0.12"
+              >
+                <a-entity geometry="primitive: sphere" class="pupil"
+                  color="#000"
+                  position="0 0 -1"
+                  scale="0.2 0.2 0.2"
+                ></a-entity>
+              </a-entity>
+              <a-entity geometry="primitive: sphere" class="eye"
+                color="#efefef"
+                position="-0.16 0.1 -0.35"
+                scale="0.12 0.12 0.12">
+                <a-entity geometry="primitive: sphere" class="pupil"
+                  color="#000"
+                  position="0 0 -1"
+                  scale="0.2 0.2 0.2"
+                ></a-entity>
+              </a-entity>
+            </a-entity>
+          </a-entity>
+        </template>
+        
+        <!-- Hand -->
+        <template id="hand-template">
+          <a-entity>
+            <a-entity geometry="primitive: box" scale="0.1 0.1 0.1"></a-entity>
+          </a-entity>
+        </template>
+
+</a-assets>   
+      <!-- Environment component info at https://feiss.github.io/aframe-environment-component/# -->
+      <a-entity id="env" scale="1 1.07 1" rotation="0 0 0" class="static" position="0 -1.68 0" environment="preset: egypt;"></a-entity>
+      <!-- Build your scene and interactions here -->
+      <!-- The users camera, and what the avatar gets attached to elsewhere -->
+      <!-- Camera -->
+      <a-entity id="player" networked="template:#player-template;attachTemplateToLocal:true;" movement-controls="speed: 0.15;constrainToNavMesh: true" position="0 0 0">
+        <!-- dlux menu --> 
+        <a-entity geometry="primitive: sphere" id="inContentMenu" position="0 .1 0" material="opacity:0" raycastable="true" radius="0.4" toggle-info></a-entity>
+        <a-entity id="rotator">
+          <a-entity id="menuContainer" geometry="primitive: plane; width: 1.25; height: 1.5" material="color: blue; opacity: 0.5;" visible="false" position="0 1.6 -1">
+            <a-entity id="menuAuthorName" bind__text.value="author" text="value:;" position=".05 .52 .01"></a-entity>
+            <a-entity id="menuPostTitle" bind__text.value="title" text="value:;" position="0 0.586 0.01"></a-entity>
+            <a-entity id="menuPostBody" bind__text.value="body" text="value:;" position="0 .07 0.01"></a-entity>
+            <a-entity id="meContainer" position="-0.1 0.6 0.01">
+              <a-entity id="menuIam" bind__text.value="username" text="value:;" position="0 0.077 0"></a-entity>
+        </a-entity>
+            <!-- DLUX Navigation-->
+            <a-entity id="menuNav" position="0 -0.58 0.02" scale=".15 .15 .15">
+              <a-entity id="menuPostVotes" bind__text.value="votesVal" text="value: $0; align: center; baseline: center; anchor: center; height: 3; letterSpacing: 2; lineHeight: 3.28; width: 5; wrapCount: 10;" position="-2 0 0.1"></a-entity>
+            <a-entity id="menuVoteButton" vote position="0 0 .01" geometry="primitive:circle; radius: .5;" material="side: double; src:#voteButtonPic; transparent: true; alphaTest: 0.82;"></a-entity>
+              <!-- Browse button 0.325 spacing-->
+              <a-entity id="nav-browse" show-menu="" geometry="primitive:plane" material="side:double;src:#nav-browse-icon;transparent:true;alphaTest:0.5" position="1.6 0 0">
+              <a-entity class="hiddenMenu" id="nav-browse-items" position="0 4 0" visible="false">
+              <a-entity geometry="primitive:plane;height:1;width:3" material="opacity:0;depthWrite:false" position="0 0 0"></a-entity>
+              <a-entity id="browse-hr" geometry="primitive:plane;height:.1;width:3" material="side:double;color:#9100b5" position="0 -.25 0"></a-entity>
+              <a-entity id="browse-videos" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -.6 0" url="/feed/videos">
+                <a-entity id="browse-videos-text" text="value:Home;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -.925 0"></a-entity>
+             <a-entity id="browse-games" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -1.25 0" url="/feed/games">
+                <a-entity id="browse-games-text" text="value:Trending;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -1.575 0"></a-entity>
+              <a-entity id="browse-apps" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -1.9 0" url="/feed/apps">
+                <a-entity id="browse-apps-text" text="value:New;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -2.225 0"></a-entity>
+              <a-entity id="browse-art" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -2.550 0" url="/feed/art">
+                <a-entity id="browse-art-text" text="value:Following;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -2.875 0"></a-entity>
+
+              <a-entity id="browse-education" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -3.2 0" url="/feed/eductation">
+                <a-entity id="browse-education-text" text="value:Random;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+            </a-entity>
+          </a-entity>
+          <a-entity id="nav-user" show-menu="" geometry="primitive:circle;radius:.5" material="side:double;src:#nav-steem-icon" position="3.2 0 0">
+            <a-entity class="hiddenMenu" id="nav-user-items" position="0 2.7 0" visible="false">
+              <a-entity geometry="primitive:plane;height:1;width:3" material="opacity:0;depthWrite:false" position="0 0 0"></a-entity>
+              <a-entity id="user-hr" geometry="primitive:plane;height:.1;width:3" material="side:double;color:#05d6a9" position="0 -.25 0"></a-entity>
+              <a-entity id="user-page" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -.6 0" url="/@">
+                <a-entity id="user-page-text" text="value:My Page;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -.925 0"></a-entity>
+              <a-entity id="user-feed"></a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -.925 0"></a-entity>
+              <a-entity id="user-create" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -1.25 0" url="https://glitch.com/edit/#!/remix/dlux-vr">
+                <a-entity id="user-create-text" text="value:Create dApp;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+              <a-entity class="hr" geometry="primitive:plane;height:.05;width:3" material="side:double;color:#7F7F7F;" position="0 -1.575 0"></a-entity>
+              <a-entity id="user-logout" geometry="primitive:plane;height:.6;width:3" material="side:double;color:#4C4C4C;" position="0 -1.9 0" url="/auth/logout">
+                <a-entity id="user-logout-text" text="value:Logout;width: 9; lineHeight: 50; letterSpacing: 5; anchor: left; baseline: center; color:;" material="color:#FFF" position="-1.3 0 0.1" scale="1 1 .01"></a-entity>
+              </a-entity>
+            </a-entity>
+        </a-entity>
+            </a-entity>
+        </a-entity>
+        </a-entity>
+        <a-entity id="head" camera look-controls="pointerLockEnabled: true" nav-agent networked="template:#head-template;attachTemplateToLocal:false;" position="0 1.6 0">
+          <a-entity cursor nav-pointer visible="false"
+              raycaster="objects: [nav-mesh]"></a-entity>
+            <a-entity geometry="primitive: sphere" class="head"
+              random-color visible="false" ></a-entity>
+        </a-entity>
+         <a-entity teleport-controls="button: trigger; collision-entities: [nav-mesh]; cameraRig: #player; teleportOrigin: #head;"
+                   laser-controls="hand: left;"></a-entity>
+         <a-entity teleport-controls="button: trigger; collision-entities: [nav-mesh]; cameraRig: #player; teleportOrigin: #head;"
+                   laser-controls="hand: right;"></a-entity>
+</a-entity>
+
+</a-scene>
+    <!-- networked aframe schema-->
+    <script> 
+      function navpointerset() {
+AFRAME.registerComponent('nav-pointer', {
+  init: function () {
+    const el = this.el;
+    // On click, send the NPC to the target location.
+    el.addEventListener('click', (e) => {
+      const ctrlEl = el.sceneEl.querySelector('[nav-agent]');
+      ctrlEl.setAttribute('nav-agent', {
+        active: true,
+        destination: e.detail.intersection.point
+      });
+    });
+    // When hovering on the nav mesh, show a green cursor.
+    el.addEventListener('mouseenter', () => {
+      el.setAttribute('material', {color: 'green'});
+    });
+    el.addEventListener('mouseleave', () => {
+      el.setAttribute('material', {color: 'crimson'})
+    });
+ 
+    // Refresh the raycaster after models load.
+    el.sceneEl.addEventListener('object3dset', () => {
+      this.el.components.raycaster.refreshObjects();
+    });
+  }
+});
+      }
+            NAF.schemas.add({
+        template: '#head-template',
+        components: [
+          'position',
+          'rotation',
+          {
+            selector: '.head',
+            component: 'material'
+          }
+        ]
+      });
+      NAF.schemas.add({
+        template: '#player-template',
+        components: [
+          'position',
+          'rotation',
+          {
+            selector: '.nametag',
+            component: 'text',
+            property: 'value'
+          }
+       ]
+      });
+      NAF.schemas.add({
+        template: '#hand-template',
+        components: [
+          'position',
+          'rotation'
+        ]
+      });
+     document.querySelector('a-scene').addEventListener('loaded', onpageloaded)
+      function removeMD(md, options) {
+options = options || {};
+options.listUnicodeChar = options.hasOwnProperty('listUnicodeChar') ? options.listUnicodeChar : false;
+options.stripListLeaders = options.hasOwnProperty('stripListLeaders') ? options.stripListLeaders : true;
+options.gfm = options.hasOwnProperty('gfm') ? options.gfm : true;
+options.useImgAltText = options.hasOwnProperty('useImgAltText') ? options.useImgAltText : false;
+var output = md || '';
+output = output.replace(/^(-\s*?|\*\s*?|_\s*?){3,}\s*$/gm, '');
+try {
+if (options.stripListLeaders) {
+if (options.listUnicodeChar)
+  output = output.replace(/^([\s\t]*)([\*\-\+]|\d+\.)\s+/gm, options.listUnicodeChar + ' $1');
+else
+  output = output.replace(/^([\s\t]*)([\*\-\+]|\d+\.)\s+/gm, '$1');
+}
+if (options.gfm) {
+output = output
+  .replace(/\n={2,}/g, '\n')
+  .replace(/~{3}.*\n/g, '')
+  .replace(/~~/g, '')
+  .replace(/`{3}.*\n/g, '');
+}
+output = output
+.replace(/<[^>]*>/g, '')
+.replace(/^[=\-]{2,}\s*$/g, '')
+.replace(/\[\^.+?\](\: .*?$)?/g, '')
+.replace(/\s{0,2}\[.*?\]: .*?$/g, '')
+.replace(/\!\[(.*?)\][\[\(].*?[\]\)]/g, options.useImgAltText ? '$1' : '')
+.replace(/\[(.*?)\][\[\(].*?[\]\)]/g, '$1')
+.replace(/^\s{0,3}>\s?/g, '')
+.replace(/^\s{1,2}\[(.*?)\]: (\S+)( ".*?")?\s*$/g, '')
+.replace(/^(\n)?\s{0,}#{1,6}\s+| {0,}(\n)?\s{0,}#{0,} {0,}(\n)?\s{0,}$/gm, '$1$2$3')
+.replace(/([\*_]{1,3})(\S.*?\S{0,1})\1/g, '$2')
+.replace(/([\*_]{1,3})(\S.*?\S{0,1})\1/g, '$2')
+.replace(/(`{3,})(.*?)\1/gm, '$2')
+.replace(/`(.+?)`/g, '$1')
+.replace(/\n{2,}/g, '\n\n');
+} catch(e) {
+console.error(e);
+return md;
+}
+return output;
+};
+    </script>
+  </body>
+</html>
